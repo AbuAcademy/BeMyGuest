@@ -1,0 +1,14 @@
+# Exemplo da p.447 para a raiz de um laboratório com scanner e targets/.
+name: Homoglyph Security Audit
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Run Homoglyph Audit
+        run: python3 homoglyph_audit.py targets/*.py

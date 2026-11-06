@@ -1,0 +1,13 @@
+#!/bin/sh
+# Página 446. Instale no laboratório, cuja raiz contém homoglyph_audit.py.
+# Filtra apenas arquivos .py no Stage
+FILES=$(git diff --cached --name-only \
+  --diff-filter=ACM | grep '\.py$')
+# Se nao houver arquivos Python, ignora
+[ -z "$FILES" ] && exit 0
+# Executa a auditoria de homoglyphs
+python3 homoglyph_audit.py $FILES
+if [ $? -ne 0 ]; then
+    echo "Homoglyph Detected — Commit Blocked"
+    exit 1
+fi

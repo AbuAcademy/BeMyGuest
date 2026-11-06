@@ -1,0 +1,19 @@
+# .github/workflows/publish.yml — trecho da página 400.
+# Este job pressupõe um artefato "dist" produzido antes no mesmo workflow.
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write      # Obrigatório para autenticação OIDC
+      contents: read
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI with SLSA Provenance
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Ativa explicitamente a geração e upload da atestação
+          attestations: true

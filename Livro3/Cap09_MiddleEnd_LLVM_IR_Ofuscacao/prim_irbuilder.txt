@@ -1,0 +1,113 @@
+// Complemento executável da página 514. Os trechos originais estão preservados
+// em referencia/prim_irbuilder_fragmento_original.txt.
+// Este programa constrói e verifica IR; não executa as funções geradas.
+// __beacon e __exfil são stubs locais sem efeitos, usados apenas na demonstração.
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/raw_ostream.h"
+
+using namespace llvm;
+
+int main() {
+    LLVMContext Ctx;
+    Module M("prim_irbuilder", Ctx);
+    Type *VoidTy = Type::getVoidTy(Ctx);
+    Type *IntTy = Type::getInt32Ty(Ctx);
+
+    Function *BeaconFunc = Function::Create(
+        FunctionType::get(VoidTy, false), Function::InternalLinkage, "__beacon", M);
+    IRBuilder<> StubBuilder(BasicBlock::Create(Ctx, "entry", BeaconFunc));
+    StubBuilder.CreateRetVoid();
+    Function *ExfilFunc = Function::Create(
+        FunctionType::get(VoidTy, {IntTy}, false),
+        Function::InternalLinkage, "__exfil", M);
+    StubBuilder.SetInsertPoint(BasicBlock::Create(Ctx, "entry", ExfilFunc));
+    StubBuilder.CreateRetVoid();
+
+    Function *Demo = Function::Create(
+        FunctionType::get(VoidTy, {IntTy, IntTy}, false),
+        Function::ExternalLinkage, "demo_irbuilder", M);
+    Value *ValA = Demo->getArg(0);
+    Value *ValB = Demo->getArg(1);
+    ValA->setName("a");
+    ValB->setName("b");
+    BasicBlock &Entry = *BasicBlock::Create(Ctx, "entry", Demo);
+    BasicBlock *TrueBB = BasicBlock::Create(Ctx, "true_block", Demo);
+    BasicBlock *FalseBB = BasicBlock::Create(Ctx, "false_block", Demo);
+    BasicBlock *ExitBB = BasicBlock::Create(Ctx, "exit", Demo);
+    // Terminador temporário: há um ponto de inserção válido no bloco Entry.
+    BranchInst *InitialBranch = BranchInst::Create(ExitBB, &Entry);
+
+    // Início dos trechos da página 514, agora com todos os símbolos definidos.
+    IRBuilder<> B(Ctx);
+    B.SetInsertPoint(&*Entry.getFirstInsertionPt());
+    
+    /* 1. Execução de Código (Chamadas de Função) */
+    
+    // Disparo silencioso de uma função previamente resolvida
+    B.CreateCall(BeaconFunc);
+    
+    // Captura do UID da máquina alvo em tempo de execução (runtime)
+    FunctionType *GetUIDTy =
+        FunctionType::get(B.getInt32Ty(), false);
+    
+    FunctionCallee GetUID =
+        M.getOrInsertFunction("getuid", GetUIDTy);
+    
+    Value *UidArg = B.CreateCall(GetUID);
+    
+    // Exfiltra o UID obtido da vítima
+    B.CreateCall(ExfilFunc, {UidArg});
+    
+    /* 2. Manipulação de Memória (Opaque Pointers) */
+    
+    // Aloca 256 bytes na stack da função instrumentada.
+    // O retorno é um ponteiro opaco genérico (ptr).
+    AllocaInst *Buf =
+        B.CreateAlloca(B.getInt8Ty(),
+                       B.getInt32(256),
+                       "hidden_buf");
+    
+    // Escreve um byte no buffer
+    B.CreateStore(B.getInt8(0x00), Buf);
+    
+    // ERA DOS OPAQUE POINTERS: O tipo (getInt8Ty()) deve ser 
+    // passado explicitamente antes do ponteiro de origem (Buf).
+    Value *Loaded =
+        B.CreateLoad(B.getInt8Ty(),
+                     Buf,
+                     "leak_byte");
+    
+    /* 3. Lógica e Aritmética */
+    
+    Value *Sum =
+        B.CreateAdd(ValA, ValB, "sum");
+    
+    // Loaded == 0x42 ('B') ?
+    Value *Cond =
+        B.CreateICmpEQ(Loaded,
+                       B.getInt8(0x42));
+    
+    /* 4. Controle de Fluxo */
+    
+    // Se Cond for verdadeiro, desvia para TrueBB. 
+    // Caso contrário, desvia para FalseBB.
+    B.CreateCondBr(Cond, TrueBB, FalseBB);
+
+    // O desvio condicional criado acima substitui o terminador temporário.
+    InitialBranch->eraseFromParent();
+    B.SetInsertPoint(TrueBB);
+    B.CreateBr(ExitBB);
+    B.SetInsertPoint(FalseBB);
+    B.CreateBr(ExitBB);
+    B.SetInsertPoint(ExitBB);
+    B.CreateRetVoid();
+
+    if (verifyModule(M, &errs())) return 1;
+    M.print(outs(), nullptr);
+    return 0;
+}
